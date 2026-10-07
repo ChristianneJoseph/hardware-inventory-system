@@ -1,0 +1,322 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="stats-grid">
+    <div class="card stat-card">
+        <h3>Total Stocks</h3>
+        <p class="stat-number">{{ total_stocks }}</p>
+    </div>
+    <div class="card stat-card">
+        <h3>Account Role</h3>
+        <p class="stat-number">{{ session['role'] }}</p>
+    </div>
+</div>
+
+<div class="card">
+    <div class="flex-between">
+        <h2>Hardware Catalog</h2>
+        <a href="{{ url_for('handle_csv_export') }}" class="btn btn-secondary">Export CSV Report</a>
+    </div>
+
+    <!-- Search & Filter Bar -->
+    <form method="GET" action="{{ url_for('render_dashboard_view') }}" class="filter-form">
+        <input type="text" name="search" placeholder="Search item name..." value="{{ search }}" class="form-control">
+        <select name="category" class="form-control">
+            <option value="ALL">All Categories</option>
+            {% for cat in categories %}
+                <option value="{{ cat }}" {% if selected_category == cat %}selected{% endif %}>{{ cat }}</option>
+            {% endfor %}
+        </select>
+        <button type="submit" class="btn btn-primary">Filter</button>
+    </form>
+
+    {% if session['role'] == 'ADMIN' %}
+    <!-- Admin Form: Delete Items -->
+    <form action="{{ url_for('handle_admin_delete_hardware') }}" method="POST" onsubmit="return confirmAction('delete selected item(s)');">
+    {% endif %}
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                {% if session['role'] == 'ADMIN' %}<th>Select</th>{% endif %}
+                <th>ID</th>
+                <th>Name</th>
+                <th>Category</th>
+                <th>Stock Quantity</th>
+                <th>Unit Price</th>
+                <th>Status</th>
+                {% if session['role'] == 'USER' %}<th>Action</th>{% endif %}
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in items %}
+            <tr>
+                {% if session['role'] == 'ADMIN' %}
+                <td><input type="checkbox" name="item_ids" value="{{ item[0] }}"></td>
+                {% endif %}
+                <td>{{ item[0] }}</td>
+                <td>{{ item[1] }}</td>
+                <td>{{ item[2] }}</td>
+                <td>{{ item[3] }}</td>
+                <td>${{ "%.2f"|format(item[4]) }}</td>
+                <td>
+                    {% if item[3] > 5 %}
+                        <span class="badge badge-success">In Stock</span>
+                    {% elif item[3] > 0 %}
+                        <span class="badge badge-warning">Low Stock</span>
+                    {% else %}
+                        <span class="badge badge-danger">Out of Stock</span>
+                    {% endif %}
+                </td>
+                {% if session['role'] == 'USER' %}
+                <td>
+                    {% if item[3] > 0 %}
+                    <form action="{{ url_for('handle_borrow_action') }}" method="POST" class="inline-form">
+                        <input type="hidden" name="item_id" value="{{ item[0] }}">
+                        <input type="number" name="quantity" min="1" max="{{ item[3] }}" value="1" class="form-control quantity-input" required>
+                        <button type="submit" class="btn btn-primary btn-sm">Request Borrow</button>
+                    </form>
+                    {% else %}
+                        <button class="btn btn-disabled btn-sm" disabled>Unavailable</button>
+                    {% endif %}
+                </td>
+                {% endif %}
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="8">No items found in inventory.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    {% if session['role'] == 'ADMIN' %}
+        <br>
+        <button type="submit" class="btn btn-danger">Delete Selected Items</button>
+    </form>
+
+    <hr>
+    <h3>Add New Hardware</h3>
+    <form action="{{ url_for('handle_admin_add_hardware') }}" method="POST" class="grid-form">
+        <input type="text" name="item_name" placeholder="Item Name" class="form-control" required>
+        <input type="text" name="category" placeholder="Category" class="form-control" required>
+        <input type="number" name="quantity" placeholder="Quantity" min="0" class="form-control" required>
+        <input type="number" step="0.01" name="unit_price" placeholder="Unit Price ($)" min="0" class="form-control" required>
+        <button type="submit" class="btn btn-primary">Add Item</button>
+    </form>
+    {% endif %}
+</div>
+
+{% if session['role'] == 'USER' %}
+<div class="card">
+    <h2>My Borrowed Items</h2>
+    <form action="{{ url_for('handle_return_request_action') }}" method="POST" onsubmit="return confirmAction('request return for selected item(s)');">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Select</th>
+                    <th>Loan ID</th>
+                    <th>Item Name</th>
+                    <th>Borrowed Qty</th>
+                    <th>Request Date</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for loan in active_loans %}
+                <tr>
+                    <td><input type="checkbox" name="loan_ids" value="{{ loan[0] }}"></td>
+                    <td>{{ loan[0] }}</td>
+                    <td>{{ loan[1] }}</td>
+                    <td>{{ loan[2] }}</td>
+                    <td>{{ loan[3] }}</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="5">You currently have no borrowed items.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% if active_loans %}
+        <br>
+        <button type="submit" class="btn btn-secondary">Request Return</button>
+        {% endif %}
+    </form>
+</div>
+
+<div class="card">
+    <h2>Pending Borrow & Return Requests</h2>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Request ID</th>
+                <th>Item Name</th>
+                <th>Qty</th>
+                <th>Status</th>
+                <th>Date</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for req in pending_borrow_requests %}
+            <tr>
+                <td>{{ req[0] }}</td>
+                <td>{{ req[1] }}</td>
+                <td>{{ req[2] }}</td>
+                <td><span class="badge badge-warning">{{ req[3] }}</span></td>
+                <td>{{ req[4] }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="5">No active pending requests.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
+{% if session['role'] == 'ADMIN' %}
+<div class="card">
+    <h2>Pending Borrow Requests</h2>
+    <form action="{{ url_for('handle_admin_borrow_decision') }}" method="POST">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Select</th>
+                    <th>ID</th>
+                    <th>User</th>
+                    <th>Item</th>
+                    <th>Qty</th>
+                    <th>Date</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for b in pending_borrows %}
+                <tr>
+                    <td><input type="checkbox" name="loan_ids" value="{{ b[0] }}"></td>
+                    <td>{{ b[0] }}</td>
+                    <td>{{ b[1] }}</td>
+                    <td>{{ b[2] }}</td>
+                    <td>{{ b[3] }}</td>
+                    <td>{{ b[4] }}</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="6">No pending borrow requests.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% if pending_borrows %}
+        <br>
+        <button type="submit" name="action" value="approve" class="btn btn-primary">Approve Borrow</button>
+        <button type="submit" name="action" value="reject" class="btn btn-danger">Reject Borrow</button>
+        {% endif %}
+    </form>
+</div>
+
+<div class="card">
+    <h2>Pending Return Requests</h2>
+    <form action="{{ url_for('handle_admin_return_decision') }}" method="POST">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Select</th>
+                    <th>ID</th>
+                    <th>User</th>
+                    <th>Item</th>
+                    <th>Qty</th>
+                    <th>Date</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in pending_returns %}
+                <tr>
+                    <td><input type="checkbox" name="loan_ids" value="{{ r[0] }}"></td>
+                    <td>{{ r[0] }}</td>
+                    <td>{{ r[1] }}</td>
+                    <td>{{ r[2] }}</td>
+                    <td>{{ r[3] }}</td>
+                    <td>{{ r[4] }}</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="6">No pending return requests.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% if pending_returns %}
+        <br>
+        <button type="submit" name="action" value="approve" class="btn btn-primary">Approve & Restock</button>
+        <button type="submit" name="action" value="reject" class="btn btn-danger">Reject Return</button>
+        {% endif %}
+    </form>
+</div>
+
+<div class="card">
+    <h2>Password Reset Requests</h2>
+    <form action="{{ url_for('handle_admin_reset_decision') }}" method="POST">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Select</th>
+                    <th>ID</th>
+                    <th>Username</th>
+                    <th>Email</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in pending_resets %}
+                <tr>
+                    <td><input type="checkbox" name="request_ids" value="{{ r[0] }}"></td>
+                    <td>{{ r[0] }}</td>
+                    <td>{{ r[1] }}</td>
+                    <td>{{ r[2] }}</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="4">No pending password reset requests.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% if pending_resets %}
+        <br>
+        <button type="submit" name="action" value="approve" class="btn btn-primary">Approve Reset</button>
+        <button type="submit" name="action" value="reject" class="btn btn-danger">Reject Reset</button>
+        {% endif %}
+    </form>
+</div>
+
+<div class="card">
+    <h2>Borrow Audit / History Log</h2>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Loan ID</th>
+                <th>Username</th>
+                <th>Item Name</th>
+                <th>Qty</th>
+                <th>Status</th>
+                <th>Date</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for loan in all_loans %}
+            <tr>
+                <td>{{ loan[0] }}</td>
+                <td>{{ loan[1] }}</td>
+                <td>{{ loan[2] }}</td>
+                <td>{{ loan[3] }}</td>
+                <td>
+                    {% if loan[4] == 'BORROWED' %}
+                        <span class="badge badge-success">{{ loan[4] }}</span>
+                    {% elif loan[4] == 'RETURNED' %}
+                        <span class="badge badge-secondary">{{ loan[4] }}</span>
+                    {% elif loan[4] == 'REJECTED' %}
+                        <span class="badge badge-danger">{{ loan[4] }}</span>
+                    {% else %}
+                        <span class="badge badge-warning">{{ loan[4] }}</span>
+                    {% endif %}
+                </td>
+                <td>{{ loan[5] }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="6">No borrow records found.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+{% endblock %}
